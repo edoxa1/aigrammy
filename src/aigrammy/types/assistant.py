@@ -34,7 +34,7 @@ class GptAssistantRepo:
             content=content
         )
         run = await self._execute_run(max_completion_tokens, max_prompt_tokens, thread_id)
-        response = self._match_status(thread_id=thread_id, run=run)
+        response = await self._match_status(thread_id=thread_id, run=run)
         return response
 
     async def push_image_url_to_thread(
@@ -65,7 +65,7 @@ class GptAssistantRepo:
         )
 
         run = await self._execute_run(max_completion_tokens, max_prompt_tokens, thread_id)
-        response = self._match_status(thread_id=thread_id, run=run)
+        response = await self._match_status(thread_id=thread_id, run=run)
         return response
 
     async def push_image_binaryio_to_thread(
@@ -104,7 +104,7 @@ class GptAssistantRepo:
         )
 
         run = await self._execute_run(max_completion_tokens, max_prompt_tokens, thread_id)
-        response = self._match_status(thread_id=thread_id, run=run)
+        response = await self._match_status(thread_id=thread_id, run=run)
         return response
 
     async def _execute_run(self, max_completion_tokens, max_prompt_tokens, thread_id):

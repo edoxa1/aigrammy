@@ -13,7 +13,7 @@ from aiogram.types import Message
 
 from openai import AsyncOpenAI
 
-# pip install --index-url https://test.pypi.org/simple/ --no-deps aigrammy
+
 from aigrammy.types.chat_completion import GptChatCompletionRepo
 from aigrammy.types.response import GptResponse
 
@@ -49,7 +49,7 @@ async def chat_gpt_example(message: Message, gpt: GptChatCompletionRepo):
     # delete 'Asking GPT...'
     await message.bot.delete_message(chat_id=message.chat.id, message_id=to_delete.message_id)
     # response text. Shows all available fields in `GptResponse` class
-    full_response = f"Response: {response.text}\n" \
+    full_response = f"Response: {response.text}\n\n" \
                     f"Finish reason: {response.finish_reason}\n" \
                     f"Prompt tokens: {response.prompt_tokens}\n" \
                     f"Completion tokens: {response.completion_tokens}\n" \
@@ -68,19 +68,21 @@ async def chat_gpt_photo_example(message: Message, gpt: GptChatCompletionRepo):
     file_id = message.photo.pop().file_id
     # get file_path of sent photo. This path represents a link to photo inside telegram database
     file = await message.bot.get_file(file_id=file_id)
-    # download file using provided link. Then, save it to binary stream
-    # it was done to avoid saving photo in host system, then reading it again, then by deleting it.
-    binary_file: typing.BinaryIO = await message.bot.download_file(file_path=file.file_path)
+
+    # create url so OpenAI can download it
+    base_url = f'https://api.telegram.org/file/bot' \
+               f'{message.bot.token}' \
+               f'/{file.file_path}'
 
     # check if prompt was given in message.caption, otherwise, no prompt given.
     prompt = message.caption
     if not prompt:
         prompt = "No prompt given."
 
-    # make request to ChatCompletion and get response.
-    response: GptResponse = await gpt.ask_telegram_image(binary_file=binary_file,
-                                                         max_tokens=1000,
-                                                         prompt=prompt)
+    # generate response based on image with given prompt
+    response = await gpt.ask_telegram_image_url(uri=base_url,
+                                                max_tokens=1000,
+                                                content=prompt)
     # create user-friendly readable response
     full_response = f"{html.italic(f'Response: {response.text}')}" \
                     f"\n\n" \
@@ -88,7 +90,9 @@ async def chat_gpt_photo_example(message: Message, gpt: GptChatCompletionRepo):
                     f"Prompt tokens: {response.prompt_tokens}\n" \
                     f"Completion tokens: {response.completion_tokens}\n" \
                     f"Total tokens consumed: {response.total_tokens_used}"
+
     await message.answer(text=full_response)
+    await to_delete.delete()
 
 
 def setup_gpt(gpt_token: str, model: str, system_prompt: str = None) -> GptChatCompletionRepo:
