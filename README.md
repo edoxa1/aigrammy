@@ -1,5 +1,5 @@
-# aigrammy
-_Minimalistic OpenAI wrapper for Telegram bots_ 
+# aigrammy — simple ChatGPT wrapper for your telegram bot!
+
 
 ## Description
 Features:
