@@ -1,11 +1,15 @@
+import io
 import logging
 
-from typing import BinaryIO
+from io import BytesIO
 from base64 import b64encode
+from typing import Literal
+
+from aiogram.types import BufferedInputFile
 from openai import AsyncOpenAI
 
-from ..exceptions import NoGptPromptSpecifiedException
-from .response import GptResponse
+from ..exceptions import NoGptPromptSpecifiedException, FailedToConvertBinaryToBase64
+from .response import GptResponse, FailedGptResponse, ModerationResponse
 
 
 class GptChatCompletionRepo:
@@ -49,8 +53,8 @@ class GptChatCompletionRepo:
 
         :return: Returns the `aiogpt.models.GptResponse` instance
         """
-        if not prompt:
-            raise NoGptPromptSpecifiedException("Given prompt is `empty` or `None`!")
+        if not prompt or prompt == '':
+            raise NoGptPromptSpecifiedException("Given prompt is `empty` or `None`")
 
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -72,9 +76,43 @@ class GptChatCompletionRepo:
                            completion_tokens=response.usage.completion_tokens,
                            prompt_tokens=response.usage.prompt_tokens)
 
+    async def audio_to_text(
+            self,
+            buffer: io.BytesIO,
+            file_extension: str
+    ) -> GptResponse:
+        buffer.name = f"file.{file_extension}"
+        buffer.seek(0)
+        try:
+            response = await self.client.audio.transcriptions.create(
+                model='whisper-1',
+                file=buffer
+            )
+        except Exception as e:
+            logging.exception(e)
+            return FailedGptResponse("Transcript failed. Refer to logging message.")
+        finally:
+            buffer.close()
+        return GptResponse(text=response.text,
+                           finish_reason="transcribed")
+
+    async def text_to_audio(
+            self,
+            text: str,
+            voice: str = "alloy"
+    ) -> BufferedInputFile:
+        response = await self.client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=text
+        )
+        buffer = await response.aread()
+        file = BufferedInputFile(file=buffer, filename="file.mp3")
+        return file
+
     async def ask_from_binaryio_image(
             self,
-            binary_file: BinaryIO,
+            binary_file: BytesIO,
             max_tokens=500,
             content: str = "(no additional info was specified)"
     ) -> GptResponse:
@@ -91,9 +129,9 @@ class GptChatCompletionRepo:
         try:
             b64_str = self._encode_image(binary_file)
         except Exception as e:
-            logging.exception(f"Failed to convert BinaryIO to b64 while sending image to OpenAI. Error: {e}")
+            logging.exception(f"Failed to convert provided BinaryIO to b64 Error: {e}")
             binary_file.close()
-            raise e  # try-except used here to close the binary file and avoid potential memory leak
+            raise FailedToConvertBinaryToBase64("Failed to convert provided BinaryIO to b64")
 
         img_url = f"data:image/jpeg;base64,{b64_str}"
         response = await self.client.chat.completions.create(
@@ -165,6 +203,28 @@ class GptChatCompletionRepo:
                            completion_tokens=response.usage.completion_tokens,
                            prompt_tokens=response.usage.prompt_tokens)
 
+    async def moderation(
+            self,
+            text,
+            model: Literal["text-moderation-stable", "text-moderation-latest"] = "text-moderation-stable"
+    ) -> ModerationResponse:
+        response = await self.client.moderations.create(
+            input=text,
+            model=model
+        )
+        response = response.results.pop()
+        print(response)
+        if response.flagged:
+            categories = response.categories.to_dict()
+            scores = response.category_scores.to_dict()
+            category_names = [category for category in categories.keys() if categories[category]]
+            category_scores = [scores[name] for name in category_names]
+            return ModerationResponse(is_flagged=True,
+                                      category_names=category_names,
+                                      category_scores=category_scores)
+
+        return ModerationResponse(is_flagged=False)
+
     def change_model(self, new_model: str):
         """ Changes the default model of ChatGPT"""
         old_model = self.model
@@ -173,7 +233,7 @@ class GptChatCompletionRepo:
         logging.warning(f"Changed `ChatCompletionRepo.model` from {old_model} to {new_model}")
 
     @staticmethod
-    def _encode_image(file: BinaryIO):
+    def _encode_image(file: BytesIO):
         """ Private method used to convert `io.BinaryIO` to b64 string """
         file.seek(0)
         return b64encode(file.read()).decode('utf-8')
