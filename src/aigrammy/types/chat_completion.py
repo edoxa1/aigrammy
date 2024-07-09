@@ -213,7 +213,6 @@ class GptChatCompletionRepo:
             model=model
         )
         response = response.results.pop()
-        print(response)
         if response.flagged:
             categories = response.categories.to_dict()
             scores = response.category_scores.to_dict()
